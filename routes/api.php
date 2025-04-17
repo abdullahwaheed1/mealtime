@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\HomeController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -25,6 +26,8 @@ Route::post('/social-login', [AuthController::class, 'socialLogin']);
 
 // Protected routes
 Route::middleware('auth:api')->group(function () {
+    Route::get('/home', [HomeController::class, 'index']);
+    Route::get('/chefs', [HomeController::class, 'getChefs']);
     Route::get('/user', [AuthController::class, 'me']);
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::post('/refresh', [AuthController::class, 'refresh']);
