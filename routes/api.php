@@ -2,6 +2,9 @@
 
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\HomeController;
+use App\Http\Controllers\Api\FileUploadController;
+use App\Http\Controllers\Api\OrderController;
+use App\Http\Controllers\Api\ChefController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -26,6 +29,7 @@ Route::post('/social-login', [AuthController::class, 'socialLogin']);
 
 // Protected routes
 Route::middleware('auth:api')->group(function () {
+    Route::post('/upload', [FileUploadController::class, 'upload']);
     Route::get('/home', [HomeController::class, 'index']);
     Route::get('/chefs', [HomeController::class, 'getChefs']);
     Route::get('/chef/{id}/dishes', [HomeController::class, 'getChefDishes']);
@@ -33,4 +37,22 @@ Route::middleware('auth:api')->group(function () {
     Route::get('/user', [AuthController::class, 'me']);
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::post('/refresh', [AuthController::class, 'refresh']);
+
+    Route::post('/chef/onboard', [ChefController::class, 'onboard']);
+    Route::post('/chef/status', [ChefController::class, 'updateStatus']);
+
+    // Dish management routes
+    Route::post('/chef/dishes', [ChefController::class, 'addDish']);
+    Route::get('/chef/dishes', [ChefController::class, 'getDishes']);
+    Route::put('/chef/dishes/{id}', [ChefController::class, 'updateDish']);
+    Route::delete('/chef/dishes/{id}', [ChefController::class, 'deleteDish']);
+
+    // Order routes
+    Route::post('/orders', [OrderController::class, 'createOrder']);
+    Route::get('/orders', [OrderController::class, 'getUserOrders']);
+    Route::get('/orders/{id}', [OrderController::class, 'getOrderDetails']);
+    Route::post('/orders/{id}/review', [OrderController::class, 'addReview']);
+    
+    // Payment route
+    Route::post('/payment/create-intent', [OrderController::class, 'createPaymentIntent']);
 });

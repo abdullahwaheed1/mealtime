@@ -10,7 +10,7 @@ class Dish extends Model
     public $timestamps = false;
     
     protected $fillable = [
-        'id', 'user_id', 'cat_id', 'cuisine_id', 'images', 'keywords', 'name', 'about', 'price', 
+        'id', 'user_id', 'category', 'cuisine_id', 'images', 'keywords', 'name', 'about', 'price', 
         'delivery_price', 'dinein_price', 'dinein_limit', 'sizes', 'timestamp'
     ];
     
