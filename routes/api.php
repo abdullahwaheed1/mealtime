@@ -28,6 +28,8 @@ Route::post('/social-login', [AuthController::class, 'socialLogin']);
 Route::middleware('auth:api')->group(function () {
     Route::get('/home', [HomeController::class, 'index']);
     Route::get('/chefs', [HomeController::class, 'getChefs']);
+    Route::get('/chef/{id}/dishes', [HomeController::class, 'getChefDishes']);
+    Route::get('/chef/{id}/reviews', [HomeController::class, 'getChefReviews']);
     Route::get('/user', [AuthController::class, 'me']);
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::post('/refresh', [AuthController::class, 'refresh']);

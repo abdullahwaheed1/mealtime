@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Cuisine;
 use App\Models\Dish;
 use App\Models\Order;
+use App\Models\Review;
 use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -245,5 +246,240 @@ class HomeController extends Controller
         $distance = $earthRadius * $c; // Distance in km
         
         return round($distance, 2);
+    }
+
+    /**
+     * Get all dishes of a chef with profile, cuisine and rating details
+     *
+     * @param  int  $id Chef ID
+     * @return \Illuminate\Http\Response
+     */
+    public function getChefDishes($id)
+    {
+        // Find the chef by ID
+        $chef = User::where('id', $id)
+                    ->where('user_type', 'chef')
+                    ->first();
+        
+        if (!$chef) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Chef not found',
+            ], 404);
+        }
+        
+        // Get chef profile details
+        $chefProfile = [
+            'id' => $chef->id,
+            'first_name' => $chef->first_name,
+            'last_name' => $chef->last_name,
+            'image' => $chef->image,
+            'about' => $chef->about,
+            'address' => $chef->address,
+            'city' => $chef->city,
+            'rest_status' => $chef->rest_status,
+        ];
+        
+        // Get all dishes of the chef
+        $dishes = Dish::where('user_id', $chef->id)
+                    ->with('cuisine')
+                    ->get();
+        
+        $dishIds = $dishes->pluck('id')->toArray();
+        
+        // Get ALL ratings data in a single query for efficiency
+        $ratingsData = DB::table('reviews')
+                        ->whereIn('dish_id', $dishIds)
+                        ->select('dish_id', 'rating')
+                        ->get();
+        
+        // Process ratings data for each dish
+        $dishRatingInfo = [];
+        foreach ($dishIds as $dishId) {
+            $dishRatingInfo[$dishId] = [
+                'total' => 0,
+                'sum' => 0,
+                'counts' => [1 => 0, 2 => 0, 3 => 0, 4 => 0, 5 => 0]
+            ];
+        }
+        
+        foreach ($ratingsData as $rating) {
+            $dishId = $rating->dish_id;
+            $ratingValue = $rating->rating;
+            
+            $dishRatingInfo[$dishId]['total']++;
+            $dishRatingInfo[$dishId]['sum'] += $ratingValue;
+            $dishRatingInfo[$dishId]['counts'][$ratingValue]++;
+        }
+        
+        $dishesWithRatings = [];
+        
+        foreach ($dishes as $dish) {
+            $dishId = $dish->id;
+            $ratingInfo = $dishRatingInfo[$dishId] ?? ['total' => 0, 'sum' => 0, 'counts' => [1 => 0, 2 => 0, 3 => 0, 4 => 0, 5 => 0]];
+            
+            // Calculate average rating
+            $avgRating = $ratingInfo['total'] > 0 ? $ratingInfo['sum'] / $ratingInfo['total'] : 0;
+            
+            // Prepare dish data with ratings
+            $dishData = [
+                'id' => $dish->id,
+                'name' => $dish->name,
+                'about' => $dish->about,
+                'price' => $dish->price,
+                'images' => $dish->images,
+                'cuisine' => $dish->cuisine ? [
+                    'id' => $dish->cuisine->id,
+                    'name' => $dish->cuisine->name,
+                    'image' => $dish->cuisine->image,
+                ] : null,
+                'ratings' => [
+                    'average' => round($avgRating, 1),
+                    'total_reviews' => $ratingInfo['total'],
+                    'star_counts' => $ratingInfo['counts'],
+                ],
+            ];
+            
+            $dishesWithRatings[] = $dishData;
+        }
+        
+        // Get chef's overall rating stats
+        $chefRatingsData = DB::table('reviews')
+                            ->where('rest_id', $chef->id)
+                            ->select('rating')
+                            ->get();
+        
+        // Process chef ratings
+        $chefRatingInfo = [
+            'total' => 0,
+            'sum' => 0,
+            'counts' => [1 => 0, 2 => 0, 3 => 0, 4 => 0, 5 => 0]
+        ];
+        
+        foreach ($chefRatingsData as $rating) {
+            $ratingValue = $rating->rating;
+            
+            $chefRatingInfo['total']++;
+            $chefRatingInfo['sum'] += $ratingValue;
+            $chefRatingInfo['counts'][$ratingValue]++;
+        }
+        
+        // Calculate chef's average rating
+        $chefAvgRating = $chefRatingInfo['total'] > 0 ? $chefRatingInfo['sum'] / $chefRatingInfo['total'] : 0;
+        
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'chef' => $chefProfile,
+                'chef_ratings' => [
+                    'average' => round($chefAvgRating, 1),
+                    'total_reviews' => $chefRatingInfo['total'],
+                    'star_counts' => $chefRatingInfo['counts'],
+                ],
+                'dishes' => $dishesWithRatings,
+            ],
+        ], 200);
+    }
+
+    /**
+     * Get all reviews of a chef with pagination and optional rating filter
+     *
+     * @param  \Illuminate\Http\Request  $request
+     * @param  int  $id Chef ID
+     * @return \Illuminate\Http\Response
+     */
+    public function getChefReviews(Request $request, $id)
+    {
+        // Find the chef by ID
+        $chef = User::where('id', $id)
+                    ->where('user_type', 'chef')
+                    ->first();
+        
+        if (!$chef) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Chef not found',
+            ], 404);
+        }
+        
+        // Build the review query
+        $reviewsQuery = Review::where('rest_id', $chef->id);
+        
+        // Filter by rating if specified
+        if ($request->has('rating')) {
+            $reviewsQuery->where('rating', $request->rating);
+        }
+        
+        // Paginate the results
+        $perPage = $request->per_page ?? 10;
+        $reviews = $reviewsQuery->with(['user:id,first_name,last_name,image', 'dish:id,name,images'])
+                            ->orderBy('timestamp', 'desc')
+                            ->paginate($perPage);
+        
+        // Format the reviews for response
+        $formattedReviews = [];
+        foreach ($reviews as $review) {
+            $formattedReviews[] = [
+                'id' => $review->id,
+                'rating' => $review->rating,
+                'detail' => $review->detail,
+                'gallery' => $review->gallery,
+                'timestamp' => $review->timestamp,
+                'user' => $review->user ? [
+                    'id' => $review->user->id,
+                    'name' => $review->user->first_name . ' ' . $review->user->last_name,
+                    'image' => $review->user->image,
+                ] : null,
+                'dish' => $review->dish ? [
+                    'id' => $review->dish->id,
+                    'name' => $review->dish->name,
+                    'image' => $review->dish->images ? $review->dish->images[0] : null,
+                ] : null,
+            ];
+        }
+        
+        // Get chef's overall rating stats
+        $chefRatingsData = DB::table('reviews')
+                            ->where('rest_id', $chef->id)
+                            ->select('rating')
+                            ->get();
+        
+        // Process chef ratings
+        $chefRatingInfo = [
+            'total' => 0,
+            'sum' => 0,
+            'counts' => [1 => 0, 2 => 0, 3 => 0, 4 => 0, 5 => 0]
+        ];
+        
+        foreach ($chefRatingsData as $rating) {
+            $ratingValue = $rating->rating;
+            
+            $chefRatingInfo['total']++;
+            $chefRatingInfo['sum'] += $ratingValue;
+            $chefRatingInfo['counts'][$ratingValue]++;
+        }
+        
+        // Calculate chef's average rating
+        $chefAvgRating = $chefRatingInfo['total'] > 0 ? $chefRatingInfo['sum'] / $chefRatingInfo['total'] : 0;
+        
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'chef_ratings' => [
+                    'average' => round($chefAvgRating, 1),
+                    'total_reviews' => $chefRatingInfo['total'],
+                    'star_counts' => $chefRatingInfo['counts'],
+                ],
+                'reviews' => $formattedReviews,
+                'pagination' => [
+                    'total' => $reviews->total(),
+                    'per_page' => $reviews->perPage(),
+                    'current_page' => $reviews->currentPage(),
+                    'last_page' => $reviews->lastPage(),
+                    'from' => $reviews->firstItem(),
+                    'to' => $reviews->lastItem(),
+                ],
+            ],
+        ], 200);
     }
 }
