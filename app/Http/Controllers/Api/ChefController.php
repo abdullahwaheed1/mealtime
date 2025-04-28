@@ -20,36 +20,21 @@ class ChefController extends Controller
      * @return \Illuminate\Http\Response
      */
     public function onboard(Request $request)
-    {
-        // Get authenticated user
-        $user = auth('api')->user();
-        
-        // Validate request data
-        $validator = Validator::make($request->all(), [
-            // Introduction section
-            'about' => 'required|string|max:255',
-            
-            // Location section
-            'address' => 'required|string',
-            'address_detail' => 'nullable|string|max:255',
-            'note' => 'nullable|string|max:255',
-            'current_lat' => 'required|numeric',
-            'current_lng' => 'required|numeric',
-            
-            // Availability section
-            'availability_pickup' => 'required|json'
-        ]);
-
-        if ($validator->fails()) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Validation Error',
-                'errors' => $validator->errors()
-            ], 422);
-        }
-
-        // Update user profile with chef details
-        $user->update([
+{
+    // Get authenticated user
+    $user = auth('api')->user();
+    
+    if (!$user) {
+        return response()->json([
+            'success' => false,
+            'message' => 'User not authenticated'
+        ], 401);
+    }
+    
+    try {
+       $updated = \DB::table('users')
+        ->where('id', $user->id)
+        ->update([
             // Introduction
             'about' => $request->about,
             
@@ -65,6 +50,9 @@ class ChefController extends Controller
             'availability_pickup' => $request->availability_pickup,
             'availability_delivery' => $request->availability_delivery,
             'availability_dinein' => $request->availability_dinein,
+            'delivery_price' => $request->delivery_price,
+            'dinein_price' => $request->dinein_price,
+            'dinein_limit' => $request->dinein_limit,
             
             // Update user type to chef
             'user_type' => 'chef',
@@ -72,14 +60,23 @@ class ChefController extends Controller
             // Set default status
             'rest_status' => 'available'
         ]);
-
+        
+        // Force reload user from database
+    $user = \App\Models\User::find($user->id);
+    
         return response()->json([
             'success' => true,
             'message' => 'Chef profile created successfully',
             'user' => $user
         ], 200);
+    } catch (\Exception $e) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Failed to update profile',
+            'error' => $e->getMessage()
+        ], 500);
     }
-
+}
     /**
      * Update chef status (available, busy, unavailable)
      *
@@ -136,12 +133,12 @@ class ChefController extends Controller
         $user = auth('api')->user();
         
         // Check if user is a chef
-        if ($user->user_type !== 'chef') {
-            return response()->json([
-                'success' => false,
-                'message' => 'Only chefs can add dishes'
-            ], 403);
-        }
+        // if ($user->user_type !== 'chef') {
+        //     return response()->json([
+        //         'success' => false,
+        //         'message' => 'Only chefs can add dishes'
+        //     ], 403);
+        // }
         
         // Validate request data
         $validator = Validator::make($request->all(), [
@@ -152,9 +149,6 @@ class ChefController extends Controller
             'cuisine_id' => 'required|integer|exists:cuisines,id',
             'price' => 'required|numeric|min:0',
             'images' => 'required|array',
-            'delivery_price' => 'nullable|numeric|min:0',
-            'dinein_price' => 'nullable|numeric|min:0',
-            'dinein_limit' => 'nullable|integer|min:0',
             'sizes' => 'nullable|array',
         ]);
 
@@ -176,9 +170,6 @@ class ChefController extends Controller
             'keywords' => json_encode($request->keywords),
             'price' => $request->price,
             'images' => json_encode($request->images),
-            'delivery_price' => $request->delivery_price,
-            'dinein_price' => $request->dinein_price,
-            'dinein_limit' => $request->dinein_limit,
             'sizes' => json_encode($request->sizes ?? []),
             'timestamp' => now()
         ]);
