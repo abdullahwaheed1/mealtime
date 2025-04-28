@@ -38,6 +38,9 @@ Route::middleware('auth:api')->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::post('/refresh', [AuthController::class, 'refresh']);
 
+    Route::get('/chef/orders', [ChefController::class, 'getChefOrders']);
+    Route::put('/chef/orders/{id}/status', [ChefController::class, 'updateOrderStatus']);
+
     Route::post('/chef/onboard', [ChefController::class, 'onboard']);
     Route::post('/chef/status', [ChefController::class, 'updateStatus']);
 
@@ -46,6 +49,11 @@ Route::middleware('auth:api')->group(function () {
     Route::get('/chef/dishes', [ChefController::class, 'getDishes']);
     Route::put('/chef/dishes/{id}', [ChefController::class, 'updateDish']);
     Route::delete('/chef/dishes/{id}', [ChefController::class, 'deleteDish']);
+
+    // Chef bank details and withdrawal routes
+    Route::post('/chef/bank-details', [ChefController::class, 'updateBankDetails']);
+    Route::post('/chef/withdraw', [ChefController::class, 'requestWithdrawal']);
+    Route::get('/chef/withdrawals', [ChefController::class, 'getWithdrawals']);
 
     // Order routes
     Route::post('/orders', [OrderController::class, 'createOrder']);
