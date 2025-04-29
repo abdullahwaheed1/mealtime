@@ -109,10 +109,14 @@ class ChefController extends Controller
             ], 422);
         }
 
-        // Update chef status
-        $user->update([
+        $updated = \DB::table('users')
+        ->where('id', $user->id)
+        ->update([
+            // Set default status
             'rest_status' => $request->status
         ]);
+
+        $user = \App\Models\User::find($user->id);
 
         return response()->json([
             'success' => true,
