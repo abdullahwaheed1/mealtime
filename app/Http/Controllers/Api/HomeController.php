@@ -72,6 +72,9 @@ class HomeController extends Controller
      */
     public function getChefs(Request $request)
     {
+        // Get authenticated user for like status
+        $currentUserId = auth('api')->user() ? auth('api')->id() : null;
+        
         // Start with a base query that selects specific columns
         $chefsQuery = User::where('user_type', 'chef')
             ->select([
@@ -86,6 +89,20 @@ class HomeController extends Controller
                 'users.address', 
                 'users.city'
             ]);
+        
+        // Add like status if user is authenticated
+        if ($currentUserId) {
+            $chefsQuery->selectRaw("(
+                SELECT COUNT(*) > 0 
+                FROM favourites 
+                WHERE favourites.to_id = users.id 
+                AND favourites.user_id = ? 
+                AND favourites.like_type = 'users'
+                AND favourites.status = 'like'
+            ) as is_liked", [$currentUserId]);
+        } else {
+            $chefsQuery->selectRaw("false as is_liked");
+        }
         
         // Add distance calculation if coordinates are provided
         if ($request->has('current_lat') && $request->has('current_lng')) {
@@ -129,12 +146,10 @@ class HomeController extends Controller
         // Filter by open now
         if ($request->has('filter') && $request->filter === 'open_now') {
             $now = Carbon::now();
-            $dayOfWeek = strtolower($now->format('l')); // e.g. "monday"
+            $dayOfWeek = strtolower($now->format('l')); 
             $currentTime = $now->format('H:i');
             
             $chefsQuery->where('users.rest_status', 'available');
-            // Note: The JSON filtering for availability is complex and would need 
-            // to be adapted based on your exact JSON structure
         }
         
         // Filter by cuisine
@@ -152,7 +167,6 @@ class HomeController extends Controller
         if ($request->has('sort_by')) {
             switch ($request->sort_by) {
                 case 'price_low':
-                    // Join dishes table but be explicit about columns
                     $chefsQuery->leftJoin('dishes', 'users.id', '=', 'dishes.user_id')
                         ->groupBy([
                             'users.id', 'users.first_name', 'users.last_name', 'users.image', 
@@ -173,7 +187,6 @@ class HomeController extends Controller
                     break;
                     
                 case 'rating':
-                    // Only add this join if not already added by top_rated filter
                     if (!($request->has('filter') && $request->filter === 'top_rated')) {
                         $chefsQuery->leftJoin('reviews', 'users.id', '=', 'reviews.rest_id')
                             ->selectRaw('AVG(IFNULL(reviews.rating, 0)) as avg_rating')
@@ -256,6 +269,9 @@ class HomeController extends Controller
      */
     public function getChefDishes($id)
     {
+        // Get authenticated user for like status
+        $currentUserId = auth('api')->user() ? auth('api')->id() : null;
+        
         // Find the chef by ID
         $chef = User::where('id', $id)
                     ->where('user_type', 'chef')
@@ -268,6 +284,16 @@ class HomeController extends Controller
             ], 404);
         }
         
+        // Check if current user likes this chef
+        $chefIsLiked = false;
+        if ($currentUserId) {
+            $chefIsLiked = \App\Models\Favourite::where('user_id', $currentUserId)
+                                            ->where('to_id', $chef->id)
+                                            ->where('like_type', 'users')
+                                            ->where('status', 'like')
+                                            ->exists();
+        }
+        
         // Get chef profile details
         $chefProfile = [
             'id' => $chef->id,
@@ -278,6 +304,7 @@ class HomeController extends Controller
             'address' => $chef->address,
             'city' => $chef->city,
             'rest_status' => $chef->rest_status,
+            'is_liked' => $chefIsLiked,
         ];
         
         // Get all dishes of the chef
@@ -286,6 +313,17 @@ class HomeController extends Controller
                     ->get();
         
         $dishIds = $dishes->pluck('id')->toArray();
+        
+        // Get user's likes for dishes if authenticated
+        $userLikes = [];
+        if ($currentUserId) {
+            $userLikes = \App\Models\Favourite::where('user_id', $currentUserId)
+                                            ->where('like_type', 'dishes')
+                                            ->where('status', 'like')
+                                            ->whereIn('to_id', $dishIds)
+                                            ->pluck('to_id')
+                                            ->toArray();
+        }
         
         // Get ALL ratings data in a single query for efficiency
         $ratingsData = DB::table('reviews')
@@ -321,7 +359,7 @@ class HomeController extends Controller
             // Calculate average rating
             $avgRating = $ratingInfo['total'] > 0 ? $ratingInfo['sum'] / $ratingInfo['total'] : 0;
             
-            // Prepare dish data with ratings
+            // Prepare dish data with ratings and like status
             $dishData = [
                 'id' => $dish->id,
                 'name' => $dish->name,
@@ -338,6 +376,7 @@ class HomeController extends Controller
                     'total_reviews' => $ratingInfo['total'],
                     'star_counts' => $ratingInfo['counts'],
                 ],
+                'is_liked' => in_array($dish->id, $userLikes),
             ];
             
             $dishesWithRatings[] = $dishData;
@@ -480,6 +519,106 @@ class HomeController extends Controller
                     'to' => $reviews->lastItem(),
                 ],
             ],
+        ], 200);
+    }
+
+    /**
+     * Like or unlike a dish
+     *
+     * @param  \Illuminate\Http\Request  $request
+     * @param  int  $id  Dish ID
+     * @return \Illuminate\Http\Response
+     */
+    public function toggleDishLike(Request $request, $id)
+    {
+        // Get authenticated user
+        $user = auth('api')->user();
+        
+        // Check if dish exists
+        $dish = Dish::find($id);
+        if (!$dish) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Dish not found',
+            ], 404);
+        }
+        
+        // Check if like already exists
+        $favourite = \App\Models\Favourite::where('user_id', $user->id)
+                                        ->where('to_id', $id)
+                                        ->where('like_type', 'dishes')
+                                        ->first();
+        
+        if ($favourite) {
+            // Unlike - delete the record
+            $favourite->delete();
+            $isLiked = false;
+        } else {
+            // Like - create a new record
+            \App\Models\Favourite::create([
+                'user_id' => $user->id,
+                'to_id' => $id,
+                'like_type' => 'dishes',
+                'status' => 'like',
+                'datetime' => now(),
+            ]);
+            $isLiked = true;
+        }
+        
+        return response()->json([
+            'success' => true,
+            'message' => $isLiked ? 'Dish liked successfully' : 'Dish unliked successfully',
+            'is_liked' => $isLiked,
+        ], 200);
+    }
+
+    /**
+     * Like or unlike a chef
+     *
+     * @param  \Illuminate\Http\Request  $request
+     * @param  int  $id  Chef ID
+     * @return \Illuminate\Http\Response
+     */
+    public function toggleChefLike(Request $request, $id)
+    {
+        // Get authenticated user
+        $user = auth('api')->user();
+        
+        // Check if chef exists
+        $chef = User::where('id', $id)->where('user_type', 'chef')->first();
+        if (!$chef) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Chef not found',
+            ], 404);
+        }
+        
+        // Check if like already exists
+        $favourite = \App\Models\Favourite::where('user_id', $user->id)
+                                        ->where('to_id', $id)
+                                        ->where('like_type', 'users')
+                                        ->first();
+        
+        if ($favourite) {
+            // Unlike - delete the record
+            $favourite->delete();
+            $isLiked = false;
+        } else {
+            // Like - create a new record
+            \App\Models\Favourite::create([
+                'user_id' => $user->id,
+                'to_id' => $id,
+                'like_type' => 'users',
+                'status' => 'like',
+                'datetime' => now(),
+            ]);
+            $isLiked = true;
+        }
+        
+        return response()->json([
+            'success' => true,
+            'message' => $isLiked ? 'Chef liked successfully' : 'Chef unliked successfully',
+            'is_liked' => $isLiked,
         ], 200);
     }
 }

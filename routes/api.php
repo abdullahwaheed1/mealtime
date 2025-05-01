@@ -39,6 +39,9 @@ Route::middleware('auth:api')->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::post('/refresh', [AuthController::class, 'refresh']);
 
+    Route::post('/dishes/{id}/like', [HomeController::class, 'toggleDishLike']);
+    Route::post('/chefs/{id}/like', [HomeController::class, 'toggleChefLike']);
+
     Route::get('/chef/orders', [ChefController::class, 'getChefOrders']);
     Route::put('/chef/orders/{id}/status', [ChefController::class, 'updateOrderStatus']);
 
