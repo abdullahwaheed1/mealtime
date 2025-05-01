@@ -348,4 +348,51 @@ class AuthController extends Controller
             'token' => $token,
         ], 200);
     }
+
+    /**
+     * Register device for push notifications
+     *
+     * @param  \Illuminate\Http\Request  $request
+     * @return \Illuminate\Http\Response
+     */
+    public function registerDevice(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'device_platform' => 'required|string|in:ios,android',
+            'device_rid' => 'required|string', // Firebase token/registration ID
+            'device_model' => 'required|string',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation Error',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        // Get the authenticated user
+        $user = auth('api')->user();
+
+        // Create or update device record
+        $device = \DB::table('devices')
+            ->updateOrInsert(
+                [
+                    'user_id' => $user->id,
+                    'deviceRid' => $request->device_rid
+                ],
+                [
+                    'user_id' => $user->id,
+                    'rider_id' => 0,
+                    'devicePlatform' => $request->device_platform,
+                    'deviceRid' => $request->device_rid,
+                    'deviceModel' => $request->device_model
+                ]
+            );
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Device registered successfully'
+        ], 200);
+    }
 }

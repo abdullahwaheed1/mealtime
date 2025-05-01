@@ -552,6 +552,14 @@ class ChefController extends Controller
             'type' => 'order',
             'seen' => 0
         ]);
+
+        $notificationData = [
+            'order_id' => $order->id,
+            'order_status' => $order->status,
+            'type' => 'order_update'
+        ];
+        
+        sendPushNotification($order->user_id, 'Order Update', $statusMessage, $notificationData, 'user');
         
         return response()->json([
             'success' => true,

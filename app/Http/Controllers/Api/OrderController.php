@@ -80,6 +80,16 @@ class OrderController extends Controller
             'created_at' => now(),
         ]);
 
+        // Notify chef about new order
+        $title = 'New Order Received';
+        $body = 'You have received a new order #' . $order->order_no;
+        $data = [
+            'order_id' => $order->id,
+            'type' => 'new_order'
+        ];
+        
+        sendPushNotification($order->to_id, $title, $body, $data, 'user');
+
         return response()->json([
             'success' => true,
             'message' => 'Order created successfully',
