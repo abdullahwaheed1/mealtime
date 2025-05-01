@@ -4,6 +4,7 @@
 /public/hot
 /public/storage
 /storage/*.key
+/storage/tomah-e3dc4-firebase-adminsdk-fbsvc-53d02e686b.json
 /storage/pail
 /vendor
 .env
@@ -21,3 +22,4 @@ yarn-error.log
 /.nova
 /.vscode
 /.zed
+/homechef-api.zip
