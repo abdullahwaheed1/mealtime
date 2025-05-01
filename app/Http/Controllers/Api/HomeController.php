@@ -8,6 +8,7 @@ use App\Models\Dish;
 use App\Models\Order;
 use App\Models\Review;
 use App\Models\User;
+use App\Models\Favourite;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -287,7 +288,7 @@ class HomeController extends Controller
         // Check if current user likes this chef
         $chefIsLiked = false;
         if ($currentUserId) {
-            $chefIsLiked = \App\Models\Favourite::where('user_id', $currentUserId)
+            $chefIsLiked = Favourite::where('user_id', $currentUserId)
                                             ->where('to_id', $chef->id)
                                             ->where('like_type', 'users')
                                             ->where('status', 'like')
@@ -317,7 +318,7 @@ class HomeController extends Controller
         // Get user's likes for dishes if authenticated
         $userLikes = [];
         if ($currentUserId) {
-            $userLikes = \App\Models\Favourite::where('user_id', $currentUserId)
+            $userLikes = Favourite::where('user_id', $currentUserId)
                                             ->where('like_type', 'dishes')
                                             ->where('status', 'like')
                                             ->whereIn('to_id', $dishIds)
@@ -544,7 +545,7 @@ class HomeController extends Controller
         }
         
         // Check if like already exists
-        $favourite = \App\Models\Favourite::where('user_id', $user->id)
+        $favourite = Favourite::where('user_id', $user->id)
                                         ->where('to_id', $id)
                                         ->where('like_type', 'dishes')
                                         ->first();
@@ -555,7 +556,7 @@ class HomeController extends Controller
             $isLiked = false;
         } else {
             // Like - create a new record
-            \App\Models\Favourite::create([
+            Favourite::create([
                 'user_id' => $user->id,
                 'to_id' => $id,
                 'like_type' => 'dishes',
@@ -594,7 +595,7 @@ class HomeController extends Controller
         }
         
         // Check if like already exists
-        $favourite = \App\Models\Favourite::where('user_id', $user->id)
+        $favourite = Favourite::where('user_id', $user->id)
                                         ->where('to_id', $id)
                                         ->where('like_type', 'users')
                                         ->first();
@@ -605,7 +606,7 @@ class HomeController extends Controller
             $isLiked = false;
         } else {
             // Like - create a new record
-            \App\Models\Favourite::create([
+            Favourite::create([
                 'user_id' => $user->id,
                 'to_id' => $id,
                 'like_type' => 'users',
