@@ -486,7 +486,7 @@ class ChefController extends Controller
         
         // Validate request data
         $validator = \Illuminate\Support\Facades\Validator::make($request->all(), [
-            'status' => 'required|string|in:processing,completed,cancelled',
+            'status' => 'required|string|in:accepted,rejected,processing,completed,cancelled',
         ]);
 
         if ($validator->fails()) {
@@ -528,11 +528,25 @@ class ChefController extends Controller
         $order->status = $request->status;
         $order->save();
         
+        // Add entry to order_history table
+        \DB::table('order_history')->insert([
+            'order_id' => $order->id,
+            'status' => $request->status,
+            'user_id' => $user->id,
+            'timestamp' => now()
+        ]);
+        
         // Create notification for customer
         $statusMessage = '';
         switch ($request->status) {
+            case 'accepted':
+                $statusMessage = 'Your order has been accepted by the chef';
+                break;
+            case 'rejected':
+                $statusMessage = 'Your order has been rejected by the chef';
+                break;
             case 'processing':
-                $statusMessage = 'You Order has Started Cooking';
+                $statusMessage = 'Your Order has Started Cooking';
                 break;
             case 'completed':
                 $statusMessage = 'Your order is on the way';
