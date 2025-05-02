@@ -445,7 +445,7 @@ class ChefController extends Controller
         
         // Get only active orders if specified
         if ($request->has('active') && $request->active == 'true') {
-            $query->whereIn('status', ['pending', 'processing']);
+            $query->whereIn('status', ['pending', 'accepted', 'processing']);
         }
         
         // Sort by date (default: newest first)
