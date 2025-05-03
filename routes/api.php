@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\HomeController;
 use App\Http\Controllers\Api\FileUploadController;
 use App\Http\Controllers\Api\OrderController;
 use App\Http\Controllers\Api\ChefController;
+use App\Http\Controllers\Api\ChatController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -68,6 +69,12 @@ Route::middleware('auth:api')->group(function () {
     
     // Payment route
     Route::post('/payment/create-intent', [OrderController::class, 'createPaymentIntent']);
+
+    // Chat routes
+    Route::post('/chat/send', [ChatController::class, 'sendMessage']);
+    Route::get('/chat', [ChatController::class, 'getChat']);
+    Route::get('/chat/check-new', [ChatController::class, 'checkNewMessages']);
+    Route::post('/chat/mark-seen', [ChatController::class, 'markAsSeen']);
 
 });
 
