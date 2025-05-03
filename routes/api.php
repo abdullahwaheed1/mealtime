@@ -29,6 +29,7 @@ Route::post('/social-login', [AuthController::class, 'socialLogin']);
 
 // Protected routes
 Route::middleware('auth:api')->group(function () {
+     Route::put('/profile', [AuthController::class, 'updateProfile']);
     Route::post('/register-device', [AuthController::class, 'registerDevice']);
     Route::post('/upload', [FileUploadController::class, 'upload']);
     Route::get('/home', [HomeController::class, 'index']);
