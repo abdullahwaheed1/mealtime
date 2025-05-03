@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\HomeController;
 use App\Http\Controllers\Api\FileUploadController;
 use App\Http\Controllers\Api\OrderController;
 use App\Http\Controllers\Api\ChefController;
+use App\Http\Controllers\Api\UserAddressController;
 use App\Http\Controllers\Api\ChatController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -40,6 +41,12 @@ Route::middleware('auth:api')->group(function () {
     Route::get('/user', [AuthController::class, 'me']);
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::post('/refresh', [AuthController::class, 'refresh']);
+
+    // User address routes
+    Route::get('/addresses', [UserAddressController::class, 'index']);
+    Route::post('/addresses', [UserAddressController::class, 'store']);
+    Route::put('/addresses/{id}', [UserAddressController::class, 'update']);
+    Route::delete('/addresses/{id}', [UserAddressController::class, 'destroy']);
 
     Route::post('/dishes/{id}/like', [HomeController::class, 'toggleDishLike']);
     Route::post('/chefs/{id}/like', [HomeController::class, 'toggleChefLike']);

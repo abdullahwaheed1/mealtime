@@ -124,6 +124,29 @@ class OrderController extends Controller
         $perPage = $request->per_page ?? 10;
         $orders = $query->paginate($perPage);
         
+        // Get chef IDs from orders
+        $chefIds = $orders->pluck('to_id')->unique()->toArray();
+        
+        // Get ratings for chefs
+        $chefRatings = DB::table('reviews')
+                        ->whereIn('rest_id', $chefIds)
+                        ->select('rest_id', DB::raw('AVG(rating) as avg_rating'), DB::raw('COUNT(*) as reviews_count'))
+                        ->groupBy('rest_id')
+                        ->get()
+                        ->keyBy('rest_id');
+        
+        // Add rating data to each order's chef
+        $orders->getCollection()->transform(function ($order) use ($chefRatings) {
+            if ($order->chef) {
+                $rating = isset($chefRatings[$order->to_id]) ? round($chefRatings[$order->to_id]->avg_rating, 1) : 0;
+                $reviewsCount = isset($chefRatings[$order->to_id]) ? $chefRatings[$order->to_id]->reviews_count : 0;
+                
+                $order->chef->rating = $rating;
+                $order->chef->reviews_count = $reviewsCount;
+            }
+            return $order;
+        });
+        
         return response()->json([
             'success' => true,
             'data' => $orders,
