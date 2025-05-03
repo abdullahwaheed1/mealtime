@@ -145,7 +145,7 @@ class OrderController extends Controller
                     ->where(function($query) use ($user) {
                         // User can view their own orders or orders assigned to them as chef
                         $query->where('user_id', $user->id)
-                              ->orWhere('to_id', $user->id);
+                            ->orWhere('to_id', $user->id);
                     })
                     ->with(['chef:id,first_name,last_name,image,phone,address'])
                     ->first();
@@ -157,10 +157,17 @@ class OrderController extends Controller
             ], 404);
         }
         
-        // Check if user has left a review for this order
-        $hasReview = Review::where('order_id', $order->id)
-                          ->where('user_id', $user->id)
-                          ->exists();
+        // Get review for this order if exists
+        $review = Review::where('order_id', $order->id)
+                        ->where('user_id', $order->user_id)
+                        ->with(['user:id,first_name,last_name,image'])
+                        ->first();
+        
+        // Calculate distance between chef and customer
+        $distance = null;
+        if (!empty($order->chef_lat) && !empty($order->chef_lng) && !empty($order->lat) && !empty($order->lng)) {
+            $distance = $this->calculateDistance($order->lat, $order->lng, $order->chef_lat, $order->chef_lng);
+        }
         
         // Format the response
         $orderData = [
@@ -183,13 +190,56 @@ class OrderController extends Controller
                 'phone' => $order->chef->phone,
                 'address' => $order->chef->address,
             ] : null,
-            'has_review' => $hasReview,
+            'distance' => $distance, // Distance in kilometers
+            'review' => $review ? [
+                'id' => $review->id,
+                'rating' => $review->rating,
+                'detail' => $review->detail,
+                'gallery' => $review->gallery,
+                'timestamp' => $review->timestamp,
+                'user' => [
+                    'id' => $review->user->id,
+                    'name' => $review->user->first_name . ' ' . $review->user->last_name,
+                    'image' => $review->user->image,
+                ]
+            ] : null,
+            'has_review' => $review !== null,
         ];
         
         return response()->json([
             'success' => true,
             'data' => $orderData,
         ], 200);
+    }
+
+    /**
+     * Calculate distance between two points using Haversine formula
+     *
+     * @param float $lat1
+     * @param float $lng1
+     * @param float $lat2
+     * @param float $lng2
+     * @return float Distance in kilometers
+     */
+    private function calculateDistance($lat1, $lng1, $lat2, $lng2)
+    {
+        if (empty($lat1) || empty($lng1) || empty($lat2) || empty($lng2)) {
+            return null;
+        }
+        
+        $earthRadius = 6371; // Radius of the earth in km
+        
+        $dLat = deg2rad($lat2 - $lat1);
+        $dLng = deg2rad($lng2 - $lng1);
+        
+        $a = sin($dLat/2) * sin($dLat/2) +
+            cos(deg2rad($lat1)) * cos(deg2rad($lat2)) * 
+            sin($dLng/2) * sin($dLng/2);
+            
+        $c = 2 * atan2(sqrt($a), sqrt(1-$a));
+        $distance = $earthRadius * $c; // Distance in km
+        
+        return round($distance, 2);
     }
 
     /**

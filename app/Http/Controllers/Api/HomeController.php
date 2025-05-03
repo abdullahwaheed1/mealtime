@@ -37,13 +37,50 @@ class HomeController extends Controller
                            ->get();
         
         // Get top chefs (based on number of completed orders received)
-        $topChefs = User::where('user_type', 'chef')
-                     ->withCount(['chefOrders as completed_orders' => function($query) {
-                         $query->where('status', 'completed');
-                     }])
-                     ->orderBy('completed_orders', 'desc')
-                     ->limit(10)
-                     ->get(['id', 'first_name', 'last_name', 'image', 'about']);
+         // Get top chefs (based on number of completed orders received)
+        $topChefsQuery = User::where('user_type', 'chef')
+            ->withCount(['chefOrders as completed_orders' => function($query) {
+                $query->where('status', 'completed');
+            }]);
+
+        // Add rating and review count
+        $topChefsQuery->leftJoin('reviews', 'users.id', '=', 'reviews.rest_id')
+        ->selectRaw('users.*, AVG(reviews.rating) as avg_rating, COUNT(reviews.id) as total_reviews')
+        ->groupBy('users.id');
+
+        // Add distance if coordinates are provided
+        if ($request->has('current_lat') && $request->has('current_lng')) {
+            $lat = $request->current_lat;
+            $lng = $request->current_lng;
+
+            $topChefsQuery->selectRaw("(
+                6371 * acos(
+                cos(radians(?)) * 
+                cos(radians(users.current_lat)) * 
+                cos(radians(users.current_lng) - radians(?)) + 
+                sin(radians(?)) * 
+                sin(radians(users.current_lat))
+                )
+                ) AS distance", [$lat, $lng, $lat]);
+            }
+
+        $topChefs = $topChefsQuery->orderBy('completed_orders', 'desc')
+            ->limit(10)
+            ->get(['id', 'first_name', 'last_name', 'image', 'about', 'avg_rating', 'total_reviews', 'distance']);
+
+        // Add calculated distance to each chef if coordinates were provided but distance is null
+        if ($request->has('current_lat') && $request->has('current_lng')) {
+            $topChefs->each(function ($chef) use ($request) {
+                if (is_null($chef->distance) && !empty($chef->current_lat) && !empty($chef->current_lng)) {
+                    $chef->distance = $this->calculateDistance(
+                        $request->current_lat, 
+                        $request->current_lng, 
+                        $chef->current_lat, 
+                        $chef->current_lng
+                    );
+                }
+            });
+        }
         
         // Get popular dishes (based on average rating from reviews)
         $popularDishes = Dish::leftJoin('reviews', 'dishes.id', '=', 'reviews.dish_id')
@@ -105,6 +142,15 @@ class HomeController extends Controller
             $chefsQuery->selectRaw("false as is_liked");
         }
         
+        // Always add rating calculation
+        $chefsQuery->leftJoin('reviews', 'users.id', '=', 'reviews.rest_id')
+            ->selectRaw('AVG(IFNULL(reviews.rating, 0)) as avg_rating')
+            ->groupBy([
+                'users.id', 'users.first_name', 'users.last_name', 'users.image', 
+                'users.about', 'users.current_lat', 'users.current_lng', 
+                'users.rest_status', 'users.address', 'users.city'
+            ]);
+        
         // Add distance calculation if coordinates are provided
         if ($request->has('current_lat') && $request->has('current_lng')) {
             $lat = $request->current_lat;
@@ -134,22 +180,11 @@ class HomeController extends Controller
         
         // Filter by top rated
         if ($request->has('filter') && $request->filter === 'top_rated') {
-            $chefsQuery->leftJoin('reviews', 'users.id', '=', 'reviews.rest_id')
-                ->selectRaw('AVG(IFNULL(reviews.rating, 0)) as avg_rating')
-                ->groupBy([
-                    'users.id', 'users.first_name', 'users.last_name', 'users.image', 
-                    'users.about', 'users.current_lat', 'users.current_lng', 
-                    'users.rest_status', 'users.address', 'users.city'
-                ])
-                ->orderBy('avg_rating', 'desc');
+            $chefsQuery->orderBy('avg_rating', 'desc');
         }
         
         // Filter by open now
         if ($request->has('filter') && $request->filter === 'open_now') {
-            $now = Carbon::now();
-            $dayOfWeek = strtolower($now->format('l')); 
-            $currentTime = $now->format('H:i');
-            
             $chefsQuery->where('users.rest_status', 'available');
         }
         
@@ -169,35 +204,16 @@ class HomeController extends Controller
             switch ($request->sort_by) {
                 case 'price_low':
                     $chefsQuery->leftJoin('dishes', 'users.id', '=', 'dishes.user_id')
-                        ->groupBy([
-                            'users.id', 'users.first_name', 'users.last_name', 'users.image', 
-                            'users.about', 'users.current_lat', 'users.current_lng', 
-                            'users.rest_status', 'users.address', 'users.city'
-                        ])
                         ->orderBy(DB::raw('MIN(dishes.price)'), 'asc');
                     break;
                     
                 case 'price_high':
                     $chefsQuery->leftJoin('dishes', 'users.id', '=', 'dishes.user_id')
-                        ->groupBy([
-                            'users.id', 'users.first_name', 'users.last_name', 'users.image', 
-                            'users.about', 'users.current_lat', 'users.current_lng', 
-                            'users.rest_status', 'users.address', 'users.city'
-                        ])
                         ->orderBy(DB::raw('MAX(dishes.price)'), 'desc');
                     break;
                     
                 case 'rating':
-                    if (!($request->has('filter') && $request->filter === 'top_rated')) {
-                        $chefsQuery->leftJoin('reviews', 'users.id', '=', 'reviews.rest_id')
-                            ->selectRaw('AVG(IFNULL(reviews.rating, 0)) as avg_rating')
-                            ->groupBy([
-                                'users.id', 'users.first_name', 'users.last_name', 'users.image', 
-                                'users.about', 'users.current_lat', 'users.current_lng', 
-                                'users.rest_status', 'users.address', 'users.city'
-                            ])
-                            ->orderBy('avg_rating', 'desc');
-                    }
+                    $chefsQuery->orderBy('avg_rating', 'desc');
                     break;
                     
                 case 'distance':
