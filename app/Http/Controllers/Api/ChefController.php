@@ -121,7 +121,8 @@ class ChefController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Chef status updated successfully',
-            'status' => $user->rest_status
+            'status' => $user->rest_status,
+            'user' => $user
         ], 200);
     }
 
@@ -588,49 +589,47 @@ class ChefController extends Controller
      * @param  \Illuminate\Http\Request  $request
      * @return \Illuminate\Http\Response
      */
-    public function updateBankDetails(Request $request)
-    {
-        // Get authenticated user
-        $user = auth('api')->user();
-        
-        // Check if user is a chef
-        if ($user->user_type !== 'chef') {
-            return response()->json([
-                'success' => false,
-                'message' => 'Only chefs can update bank details'
-            ], 403);
-        }
-        
-        // Validate request data
-        $validator = Validator::make($request->all(), [
-            'payment_method' => 'required|string|in:bank_transfer,paypal',
-            'bank_details' => 'required|array',
-        ]);
+   public function updateBankDetails(Request $request)
+{
+    $user = auth('api')->user();
 
-        if ($validator->fails()) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Validation Error',
-                'errors' => $validator->errors()
-            ], 422);
-        }
-
-        // Create bank details JSON
-        $bankDetails = [
-            'payment_method' => $request->payment_method,
-            'details' => $request->bank_details
-        ];
-
-        // Update user's bank details
-        $user->bank_details = json_encode($bankDetails);
-        $user->save();
-
+    if ($user->user_type !== 'chef') {
         return response()->json([
-            'success' => true,
-            'message' => 'Bank details updated successfully',
-            'bank_details' => json_decode($user->bank_details)
-        ], 200);
+            'success' => false,
+            'message' => 'Only chefs can update bank details'
+        ], 403);
     }
+
+    $validator = Validator::make($request->all(), [
+        'payment_method' => 'required|string|in:bank_transfer,paypal',
+        'bank_details' => 'required|array',
+    ]);
+
+    if ($validator->fails()) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Validation Error',
+            'errors' => $validator->errors()
+        ], 422);
+    }
+
+    $detailsJson = json_encode($request->bank_details);
+
+    if ($request->payment_method === 'paypal') {
+        $user->paypal_details = $detailsJson;
+    } else {
+        $user->bank_details = $detailsJson;
+    }
+
+    $user->save();
+
+    return response()->json([
+        'success' => true,
+        'message' => 'Bank/PayPal details updated successfully',
+        'user' => $user
+    ], 200);
+}
+
 
     /**
      * Create a withdraw request
@@ -696,7 +695,8 @@ class ChefController extends Controller
             'success' => true,
             'message' => 'Withdrawal request created successfully',
             'withdrawal' => $withdraw,
-            'remaining_balance' => $user->balance
+            'remaining_balance' => $user->balance,
+            'user'=> $user
         ], 201);
     }
 

@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\Validator;
 use Stripe\Stripe;
 use Stripe\PaymentIntent;
 use Stripe\Exception\ApiErrorException;
+use Illuminate\Support\Facades\DB;
 
 class OrderController extends Controller
 {
@@ -124,29 +125,6 @@ class OrderController extends Controller
         $perPage = $request->per_page ?? 10;
         $orders = $query->paginate($perPage);
         
-        // Get chef IDs from orders
-        $chefIds = $orders->pluck('to_id')->unique()->toArray();
-        
-        // Get ratings for chefs
-        $chefRatings = DB::table('reviews')
-                        ->whereIn('rest_id', $chefIds)
-                        ->select('rest_id', DB::raw('AVG(rating) as avg_rating'), DB::raw('COUNT(*) as reviews_count'))
-                        ->groupBy('rest_id')
-                        ->get()
-                        ->keyBy('rest_id');
-        
-        // Add rating data to each order's chef
-        $orders->getCollection()->transform(function ($order) use ($chefRatings) {
-            if ($order->chef) {
-                $rating = isset($chefRatings[$order->to_id]) ? round($chefRatings[$order->to_id]->avg_rating, 1) : 0;
-                $reviewsCount = isset($chefRatings[$order->to_id]) ? $chefRatings[$order->to_id]->reviews_count : 0;
-                
-                $order->chef->rating = $rating;
-                $order->chef->reviews_count = $reviewsCount;
-            }
-            return $order;
-        });
-        
         return response()->json([
             'success' => true,
             'data' => $orders,
@@ -159,81 +137,92 @@ class OrderController extends Controller
      * @param  int  $id
      * @return \Illuminate\Http\Response
      */
-    public function getOrderDetails($id)
-    {
-        $user = auth('api')->user();
-        
-        // Find the order
-        $order = Order::where('id', $id)
-                    ->where(function($query) use ($user) {
-                        // User can view their own orders or orders assigned to them as chef
-                        $query->where('user_id', $user->id)
-                            ->orWhere('to_id', $user->id);
-                    })
-                    ->with(['chef:id,first_name,last_name,image,phone,address'])
-                    ->first();
-        
-        if (!$order) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Order not found or you do not have permission to view it',
-            ], 404);
-        }
-        
-        // Get review for this order if exists
-        $review = Review::where('order_id', $order->id)
-                        ->where('user_id', $order->user_id)
-                        ->with(['user:id,first_name,last_name,image'])
-                        ->first();
-        
-        // Calculate distance between chef and customer
-        $distance = null;
-        if (!empty($order->chef_lat) && !empty($order->chef_lng) && !empty($order->lat) && !empty($order->lng)) {
-            $distance = $this->calculateDistance($order->lat, $order->lng, $order->chef_lat, $order->chef_lng);
-        }
-        
-        // Format the response
-        $orderData = [
-            'id' => $order->id,
-            'order_no' => $order->order_no,
-            'order_type' => $order->order_type,
-            'amount' => $order->amount,
-            'delivery_fee' => $order->delivery_fee,
-            'service_fee' => $order->service_fee,
-            'total_amount' => $order->amount + $order->delivery_fee + $order->service_fee,
-            'status' => $order->status,
-            'address' => $order->address,
-            'payment_method' => $order->payment_method,
-            'created_at' => $order->created_at,
-            'cart_items' => $order->cartItems,
-            'chef' => $order->chef ? [
-                'id' => $order->chef->id,
-                'name' => $order->chef->first_name . ' ' . $order->chef->last_name,
-                'image' => $order->chef->image,
-                'phone' => $order->chef->phone,
-                'address' => $order->chef->address,
-            ] : null,
-            'distance' => $distance, // Distance in kilometers
-            'review' => $review ? [
-                'id' => $review->id,
-                'rating' => $review->rating,
-                'detail' => $review->detail,
-                'gallery' => $review->gallery,
-                'timestamp' => $review->timestamp,
-                'user' => [
-                    'id' => $review->user->id,
-                    'name' => $review->user->first_name . ' ' . $review->user->last_name,
-                    'image' => $review->user->image,
-                ]
-            ] : null,
-            'has_review' => $review !== null,
-        ];
-        
+public function getOrderDetails($id)
+{
+    $user = auth('api')->user();
+    
+    // Find the order
+    $order = Order::where('id', $id)
+                ->where(function($query) use ($user) {
+                    // User can view their own orders or orders assigned to them as chef
+                    $query->where('user_id', $user->id)
+                        ->orWhere('to_id', $user->id);
+                })
+                ->with(['chef:id,first_name,last_name,image,phone,address'])
+                ->first();
+    
+    if (!$order) {
         return response()->json([
-            'success' => true,
-            'data' => $orderData,
-        ], 200);
+            'success' => false,
+            'message' => 'Order not found or you do not have permission to view it',
+        ], 404);
     }
+    
+    // Get review for this order if exists
+    $review = Review::where('order_id', $order->id)
+                    ->where('user_id', $order->user_id)
+                    ->with(['user:id,first_name,last_name,image'])
+                    ->first();
+    
+    // Calculate distance between chef and customer
+    $distance = null;
+    if (!empty($order->chef_lat) && !empty($order->chef_lng) && !empty($order->lat) && !empty($order->lng)) {
+        $distance = $this->calculateDistance($order->lat, $order->lng, $order->chef_lat, $order->chef_lng);
+    }
+    
+    // Get chef's average rating and review count
+    $chefRatingData = DB::table('reviews')
+                        ->where('rest_id', $order->to_id)
+                        ->select(
+                            DB::raw('AVG(rating) as avg_rating'),
+                            DB::raw('COUNT(*) as review_count')
+                        )
+                        ->first();
+    
+    // Format the response
+    $orderData = [
+        'id' => $order->id,
+        'order_no' => $order->order_no,
+        'order_type' => $order->order_type,
+        'amount' => $order->amount,
+        'delivery_fee' => $order->delivery_fee,
+        'service_fee' => $order->service_fee,
+        'total_amount' => $order->amount + $order->delivery_fee + $order->service_fee,
+        'status' => $order->status,
+        'address' => $order->address,
+        'payment_method' => $order->payment_method,
+        'created_at' => $order->created_at,
+        'cart_items' => $order->cartItems,
+        'chef' => $order->chef ? [
+            'id' => $order->chef->id,
+            'name' => $order->chef->first_name . ' ' . $order->chef->last_name,
+            'image' => $order->chef->image,
+            'phone' => $order->chef->phone,
+            'address' => $order->chef->address,
+            'avg_rating' => $chefRatingData ? round($chefRatingData->avg_rating, 1) : 0,
+            'review_count' => $chefRatingData ? $chefRatingData->review_count : 0,
+        ] : null,
+        'distance' => $distance, // Distance in kilometers
+        'review' => $review ? [
+            'id' => $review->id,
+            'rating' => $review->rating,
+            'detail' => $review->detail,
+            'gallery' => $review->gallery,
+            'timestamp' => $review->timestamp,
+            'user' => [
+                'id' => $review->user->id,
+                'name' => $review->user->first_name . ' ' . $review->user->last_name,
+                'image' => $review->user->image,
+            ]
+        ] : null,
+        'has_review' => $review !== null,
+    ];
+    
+    return response()->json([
+        'success' => true,
+        'data' => $orderData,
+    ], 200);
+}
 
     /**
      * Calculate distance between two points using Haversine formula

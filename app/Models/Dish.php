@@ -9,9 +9,10 @@ class Dish extends Model
     protected $table = 'dishes';
     public $timestamps = false;
     
-    protected $fillable = [
+     protected $fillable = [
         'id', 'user_id', 'category', 'cuisine_id', 'images', 'keywords', 'name', 'about', 'price', 
-        'delivery_price', 'dinein_price', 'dinein_limit', 'sizes', 'timestamp'
+        'delivery_price', 'dinein_price', 'dinein_limit', 'sizes', 'timestamp', 'dish_type',
+        'ingredients', 'calories', 'portions', 'allergy'
     ];
     
     public function cuisine()
