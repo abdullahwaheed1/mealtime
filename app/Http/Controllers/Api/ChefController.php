@@ -731,4 +731,74 @@ class ChefController extends Controller
             'balance' => $user->balance
         ], 200);
     }
+
+    /**
+     * Get reviews for the authenticated chef
+     *
+     * @param  \Illuminate\Http\Request  $request
+     * @return \Illuminate\Http\Response
+     */
+    public function getChefReviews(Request $request)
+    {
+        // Get authenticated user (chef)
+        $user = auth('api')->user();
+        
+        // Check if user is a chef
+        if ($user->user_type !== 'chef') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Only chefs can view their reviews'
+            ], 403);
+        }
+        
+        // Build the review query
+        $reviewsQuery = Review::where('rest_id', $user->id);
+        
+        // Filter by rating if specified
+        if ($request->has('rating')) {
+            $reviewsQuery->where('rating', $request->rating);
+        }
+        
+        // Paginate the results
+        $perPage = $request->per_page ?? 10;
+        $reviews = $reviewsQuery->with(['user:id,first_name,last_name,image', 'dish:id,name,images'])
+                            ->orderBy('timestamp', 'desc')
+                            ->paginate($perPage);
+        
+        // Get chef's overall rating stats
+        $chefRatingInfo = DB::table('reviews')
+                            ->where('rest_id', $user->id)
+                            ->select(
+                                DB::raw('COUNT(*) as total'),
+                                DB::raw('AVG(rating) as average')
+                            )
+                            ->first();
+        
+        // Get rating distribution
+        $ratingDistribution = DB::table('reviews')
+                                ->where('rest_id', $user->id)
+                                ->select('rating', DB::raw('COUNT(*) as count'))
+                                ->groupBy('rating')
+                                ->get()
+                                ->pluck('count', 'rating')
+                                ->toArray();
+        
+        // Ensure all rating levels are represented
+        $starCounts = [];
+        for ($i = 1; $i <= 5; $i++) {
+            $starCounts[$i] = $ratingDistribution[$i] ?? 0;
+        }
+        
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'chef_ratings' => [
+                    'average' => $chefRatingInfo ? round($chefRatingInfo->average, 1) : 0,
+                    'total_reviews' => $chefRatingInfo ? $chefRatingInfo->total : 0,
+                    'star_counts' => $starCounts,
+                ],
+                'reviews' => $reviews,
+            ],
+        ], 200);
+    }
 }

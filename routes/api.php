@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\OrderController;
 use App\Http\Controllers\Api\ChefController;
 use App\Http\Controllers\Api\UserAddressController;
 use App\Http\Controllers\Api\ChatController;
+use App\Http\Controllers\Api\NotificationController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -67,6 +68,12 @@ Route::middleware('auth:api')->group(function () {
     Route::post('/chef/bank-details', [ChefController::class, 'updateBankDetails']);
     Route::post('/chef/withdraw', [ChefController::class, 'requestWithdrawal']);
     Route::get('/chef/withdrawals', [ChefController::class, 'getWithdrawals']);
+
+    // Chef reviews
+    Route::get('/chef/reviews', [ChefController::class, 'getChefReviews']);
+
+    // Notifications
+    Route::get('/notifications', [NotificationController::class, 'getNotifications']);
 
     // Order routes
     Route::post('/orders', [OrderController::class, 'createOrder']);
